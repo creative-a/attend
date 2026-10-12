@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Employee Attendance System</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: sans-serif; background: #f4f6f9; padding: 20px; color: #333; }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #f8f9fa; }
+    button { background: #007bff; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    input[type="time"] { padding: 5px; border: 1px solid #ccc; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>Monthly Attendance (دوام) Portal</h2>
+  <div id="auth-section">
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+  </div>
+
+  <div id="app-section" style="display:none;">
+    <h3 id="month-title"></h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Start Time (08:00)</th>
+          <th>End Time (17:00)</th>
+          <th>Total Hours</th>
+          <th>Action</th>
+        </tr>
+      </span>
+      <tbody id="calendar-table-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+  const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let token = null;
+
+  async function login() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    
+    if (error) return alert(error.message);
+    token = data.session.access_token;
+    
+    document.getElementById('auth-section').style.display = 'none';
+    document.getElementById('app-section').style.display = 'block';
+    loadMonthCalendar();
+  }
+
+  async function loadMonthCalendar() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    document.getElementById('month-titleinnerText') = `Month: ${year}-${String(month).padStart(2, '0')}`;
+
+    // Fetch existing records for this month
+    const res = await fetch(`http://localhost:5000/api/attendance?year=${year}&month=${month}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const logs = await res.json();
+    const logsMap = {};
+    logs.forEach(l => logsMap[l.log_date] = l);
+
+    const tbody = document.getElementById('calendar-table-body');
+    tbody.innerHTML = '';
+
+    // Generate days of the current month
+    const daysInMonth = new Date(year, month, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const log = logsMap[dateStr] || { start_time: '08:00', end_time: '17:00', total_hours: 9, is_locked: false };
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${dateStr}</td>
+        <td><input type="time" id="start_${dateStr}" value="${log.start_time}" ${log.is_locked ? 'disabled' : ''}></td>
+        <td><input type="time" id="end_${dateStr}" value="${log.end_time}" ${log.is_locked ? 'disabled' : ''}></td>
+        <td id="hours_${dateStr}">${log.total_hours} hrs</td>
+        <td>
+          <button id="btn_${dateStr}" onclick="submitDay('${dateStr}')" ${log.is_locked ? 'disabled' : ''}>
+            ${log.is_locked ? 'Done & Locked' : 'Submit & Lock'}
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function submitDay(dateStr) {
+    const start_time = document.getElementById(`start_${dateStr}`).value;
+    const end_time = document.getElementById(`end_${dateStr}`).value;
+
+    const res = await fetch('http://localhost:5000/api/attendance', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ log_date: dateStr, start_time, end_time })
+    });
+
+    const result = await res.json();
+    if (res.ok) {
+      alert('Attendance saved and locked successfully!');
+      loadMonthCalendar();
+    } else {
+      alert(result.error);
+    }
+  }
+</script>
+</body>
+</html>
