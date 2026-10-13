@@ -10,7 +10,7 @@ app.use(cors());
 // Initialize Supabase Client
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY // Use service role for backend logic validation
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // Middleware to verify Supabase User Token
@@ -25,11 +25,17 @@ async function verifyAuth(req, res, next) {
   next();
 }
 
+// Health check endpoint for Render monitoring
+app.get('/', (req, res) => {
+  res.status(200).send('Attendance API is running smoothly.');
+});
+
 // 1. Get Monthly Attendance Logs for Logged-in User
 app.get('/api/attendance', verifyAuth, async (req, res) => {
-  const { year, month } = req.query; // e.g. year=2026, month=10
+  const { year, month } = req.query;
+  if (!year || !month) return res.status(400).json({ error: 'Year and month are required' });
+
   const startDate = `${year}-${month.padStart(2, '0')}-01`;
-  // Calculate end date of month
   const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
   const { data, error } = await supabase
@@ -47,12 +53,10 @@ app.get('/api/attendance', verifyAuth, async (req, res) => {
 app.post('/api/attendance', verifyAuth, async (req, res) => {
   const { log_date, start_time, end_time } = req.body;
 
-  // Calculate total hours between 8am and 5pm or custom range
   const start = new Date(`1970-01-01T${start_time}Z`);
   const end = new Date(`1970-01-01T${end_time}Z`);
   const total_hours = Math.max(0, (end - start) / (1000 * 60 * 60));
 
-  // Upsert record and lock it (`is_locked: true`)
   const { data, error } = await supabase
     .from('attendance_logs')
     .upsert({
@@ -61,7 +65,7 @@ app.post('/api/attendance', verifyAuth, async (req, res) => {
       start_time,
       end_time,
       total_hours,
-      is_locked: true // Mark as done and lock slider
+      is_locked: true
     }, { onConflict: 'user_id,log_date' })
     .select();
 
@@ -69,5 +73,8 @@ app.post('/api/attendance', verifyAuth, async (req, res) => {
   res.json({ message: 'Attendance marked and locked successfully', data });
 });
 
+// Bind to Render's dynamic port and 0.0.0.0 host
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
